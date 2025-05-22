@@ -1,1 +1,0 @@
-# Base requirements for the FastAPI application

@@ -10,3 +10,7 @@ logging.ini
 _arc/
 logging.ini
 alembic.ini
+*.zsh
+.git/
+
+
