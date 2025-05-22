@@ -1,0 +1,12 @@
+# Git ignore file
+.venv/
+scripts/
+templates/
+alembic.ini
+logging.ini
+**.env
+.env
+.env.bak
+_arc/
+logging.ini
+alembic.ini

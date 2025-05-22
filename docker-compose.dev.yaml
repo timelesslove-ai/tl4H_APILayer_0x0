@@ -1,0 +1,153 @@
+version: '3.8'
+
+volumes:
+  postgres_data:
+  mongodb_data:
+  redis_data:
+
+networks:
+  memory_network:
+    driver: bridge
+
+services:
+  # Combined API Service (for development)
+  api:
+    build: 
+      context: ./services/api
+      dockerfile: Dockerfile.dev
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./services/api:/app
+      - ./storage:/app/storage
+    env_file: .env.dev
+    environment:
+      - PYTHONDONTWRITEBYTECODE=1
+      - PYTHONUNBUFFERED=1
+      - DEBUG=true
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - memory_network
+    command: uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # Web Client (Frontend)
+  web-client:
+    build: 
+      context: ./web-client
+      dockerfile: Dockerfile.dev
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./web-client:/app
+      - /app/node_modules
+    env_file: .env.dev
+    environment:
+      - NODE_ENV=development
+      - REACT_APP_API_URL=http://localhost:8000
+    networks:
+      - memory_network
+    depends_on:
+      - api
+    command: npm start
+
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    env_file: .env.dev
+    environment:
+      - POSTGRES_USER=dev_user
+      - POSTGRES_PASSWORD=dev_password
+      - POSTGRES_DB=memory_app_dev
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./databases/postgres/init/dev-init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5432:5432"
+    networks:
+      - memory_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dev_user"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # MongoDB Database
+  mongodb:
+    image: mongo:6
+    env_file: .env.dev
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=dev_user
+      - MONGO_INITDB_ROOT_PASSWORD=dev_password
+      - MONGO_INITDB_DATABASE=memory_app_dev
+    volumes:
+      - mongodb_data:/data/db
+      - ./databases/mongodb/init/dev-init.js:/docker-entrypoint-initdb.d/init.js
+    ports:
+      - "27017:27017"
+    networks:
+      - memory_network
+    healthcheck:
+      test: mongosh --eval "db.adminCommand('ping')"
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # Redis for Caching and Messaging
+  redis:
+    image: redis:7-alpine
+    command: redis-server --requirepass dev_redis_password
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - memory_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "dev_redis_password", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # PGAdmin for Database Management (Optional dev tool)
+  pgadmin:
+    image: dpage/pgadmin4
+    environment:
+      PGADMIN_DEFAULT_EMAIL: dev@example.com
+      PGADMIN_DEFAULT_PASSWORD: dev_password
+      PGADMIN_LISTEN_PORT: 5050
+    ports:
+      - "5050:5050"
+    volumes:
+      - ./infrastructure/pgadmin/servers.json:/pgadmin4/servers.json
+    depends_on:
+      - postgres
+    networks:
+      - memory_network
+
+  # MongoDB Express for Database Management (Optional dev tool)
+  mongo-express:
+    image: mongo-express
+    environment:
+      ME_CONFIG_MONGODB_ADMINUSERNAME: dev_user
+      ME_CONFIG_MONGODB_ADMINPASSWORD: dev_password
+      ME_CONFIG_MONGODB_URL: mongodb://dev_user:dev_password@mongodb:27017/
+    ports:
+      - "8081:8081"
+    depends_on:
+      - mongodb
+    networks:
+      - memory_network
